@@ -12,6 +12,8 @@ import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_deepseek import ChatDeepSeek
 
 
 QUERY_1 = "How much money did I spend in total for these bills?"
@@ -63,8 +65,35 @@ def build_chain() -> Any:
     ``deepseek-v4-flash-vision-exp``. The API key is loaded from .env.
     """
     ### YOUR CODE HERE
-    return None
-
+    model = ChatDeepSeek(
+        model="deepseek-v4-flash-vision-exp",
+        temperature=0.0
+    )
+    prompt = ChatPromptTemplate.from_messages([
+        (
+            "system",
+            "You are an expert AI assistant specialized in analyzing supermarket receipts. "
+            "Carefully examine the provided receipt image and answer the specific question. "
+            "Your output must contain ONLY ONE numerical monetary amount with the currency symbol (e.g., HK$102.30), "
+            "with no extra text, explanations, or other numbers."
+        ),
+        (
+            "human",
+            [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "{image_url}"}
+                },
+                {
+                    "type": "text",
+                    "text": "{question}"
+                }
+            ]
+        )
+    ])
+    chain = prompt | model
+    return chain
+   
 
 def answer_queries(chain: Any, images: list[Path]) -> dict[str, Any]:
     """Run your chain and return one response for each exact query string.
@@ -79,10 +108,28 @@ def answer_queries(chain: Any, images: list[Path]) -> dict[str, Any]:
     to process independent receipt-extraction prompts in parallel.
     """
     ### YOUR CODE HERE
-    _ = (chain, images)
-    return {QUERY_1: DUMMY_RESPONSE, QUERY_2: DUMMY_RESPONSE}
+    total_q1 = Decimal("0.00")
+    total_q2 = Decimal("0.00")
 
+    for img_path in images:
+        img_url = image_data_url(img_path)
+        resp_q1 = chain.invoke({"image_url": img_url, "question": QUERY_1})
+        text_q1 = response_text(resp_q1)
+        amount_q1 = parse_single_amount(text_q1)
+        if amount_q1 is not None:
+            total_q1 += amount_q1
+        resp_q2 = chain.invoke({"image_url": img_url, "question": QUERY_2})
+        text_q2 = response_text(resp_q2)
+        amount_q2 = parse_single_amount(text_q2)
+        if amount_q2 is not None:
+            total_q2 += amount_q2
+    return {
+        QUERY_1: f"HK${total_q1:.2f}",
+        QUERY_2: f"HK${total_q2:.2f}",
+    }
+            
 
+   
 # Everything below is provided runner/scoring code. No edits are needed.
 
 _MONEY_RE = re.compile(
